@@ -10,4 +10,5 @@ type RequestLog struct {
 	ResponseStatusCode int    `json:"response_status_code"`
 	ResponseTimeMs     int64  `json:"response_time_ms"`
 	UserId             string `json:"user_id"`
+	Error              string `json:"error"`
 }
