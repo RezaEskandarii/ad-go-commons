@@ -60,22 +60,20 @@ func (w *elasticWriter) Write(p []byte) (n int, err error) {
 		return 0, fmt.Errorf("elasticsearch client is nil")
 	}
 
-	var logEntry RequestLog
-	var logResult interface{}
+	if json.Valid(p) {
+		var logEntry RequestLog
+		err = json.Unmarshal(p, &logEntry)
+		if err != nil {
+			fmt.Println("Failed to unmarshal log entry:", err)
+			return 0, err
+		}
 
-	err = json.Unmarshal(p, &logEntry)
-	if err != nil {
-		fmt.Println("Failed to unmarshal log entry:", err)
-		logResult = string(p)
+		err = writeLogToElastic(err, w, logEntry)
 
 	} else {
-		logResult = logEntry
-	}
 
-	_, err = w.client.Index().
-		Index(w.index).
-		BodyJson(logResult).
-		Do(context.Background())
+		err = writeLogToElastic(err, w, string(p))
+	}
 
 	if err != nil {
 		fmt.Println("Failed to log to Elasticsearch:", err)
@@ -83,6 +81,14 @@ func (w *elasticWriter) Write(p []byte) (n int, err error) {
 	}
 
 	return len(p), nil
+}
+
+func writeLogToElastic(err error, w *elasticWriter, body interface{}) error {
+	_, err = w.client.Index().
+		Index(w.index).
+		BodyJson(body).
+		Do(context.Background())
+	return err
 }
 
 func (w *elasticWriter) Sync() error {
