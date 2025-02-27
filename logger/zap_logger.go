@@ -10,7 +10,7 @@ import (
 	"os"
 )
 
-type LoggerInterface interface {
+type AppLogger interface {
 	Debug(msg string, args ...interface{})
 	Info(msg string, args ...interface{})
 	Warn(msg string, args ...interface{})
@@ -22,7 +22,7 @@ type Logger struct {
 	sugar *zap.SugaredLogger
 }
 
-func NewLogger(index string) LoggerInterface {
+func NewLogger(index string) AppLogger {
 	encoderConfig := zap.NewProductionEncoderConfig()
 	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
