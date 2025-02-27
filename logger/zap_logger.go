@@ -2,6 +2,7 @@ package logger
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/RezaEskandarii/ad-go-commons/env_manager"
 	"github.com/olivere/elastic/v7"
@@ -59,9 +60,21 @@ func (w *elasticWriter) Write(p []byte) (n int, err error) {
 		return 0, fmt.Errorf("elasticsearch client is nil")
 	}
 
+	var logEntry RequestLog
+	var logResult interface{}
+
+	err = json.Unmarshal(p, &logEntry)
+	if err != nil {
+		fmt.Println("Failed to unmarshal log entry:", err)
+		logResult = string(p)
+
+	} else {
+		logResult = logEntry
+	}
+
 	_, err = w.client.Index().
 		Index(w.index).
-		BodyJson(string(p)).
+		BodyJson(logResult).
 		Do(context.Background())
 
 	if err != nil {
