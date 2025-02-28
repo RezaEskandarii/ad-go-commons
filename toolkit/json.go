@@ -5,11 +5,20 @@ import (
 	"encoding/json"
 )
 
-func ToJSON(data interface{}) (string, error) {
+func ToJSON(data interface{}) string {
 	var buf bytes.Buffer
 	err := json.NewEncoder(&buf).Encode(data)
 	if err != nil {
-		return "", err
+		return ""
 	}
-	return buf.String(), nil
+
+	return buf.String()
+}
+
+func JSONEscape(i string) string {
+	b, err := json.Marshal(i)
+	if err != nil {
+		return ""
+	}
+	return string(b[1 : len(b)-1])
 }

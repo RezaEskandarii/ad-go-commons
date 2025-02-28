@@ -1,116 +1,80 @@
 package logger
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/RezaEskandarii/ad-go-commons/env_manager"
-	"github.com/olivere/elastic/v7"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"os"
+	"time"
+
+	"github.com/olivere/elastic/v7"
+	"github.com/sirupsen/logrus"
+	elogrus "gopkg.in/sohlich/elogrus.v7"
 )
 
 type AppLogger interface {
-	Debug(msg string, args ...interface{})
-	Info(msg string, args ...interface{})
-	Warn(msg string, args ...interface{})
-	Error(msg string, args ...interface{})
-	Fatal(msg string, args ...interface{})
+	Info(msg string, jsonString string)
+	Error(msg string, jsonString string)
+	Debug(msg string, jsonString string)
 }
 
-type Logger struct {
-	sugar *zap.SugaredLogger
+// ElasticLogger
+type ElasticLogger struct {
+	logger *logrus.Logger
 }
 
-func NewLogger(index string) AppLogger {
-	encoderConfig := zap.NewProductionEncoderConfig()
-	encoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	encoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
-	encoderConfig.EncodeCaller = zapcore.FullCallerEncoder
-
-	core := zapcore.NewCore(
-		zapcore.NewJSONEncoder(encoderConfig),
-		zapcore.NewMultiWriteSyncer(zapcore.AddSync(os.Stdout), esWriter(index)),
-		zap.DebugLevel,
-	)
-
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zap.ErrorLevel))
-	return &Logger{sugar: logger.Sugar()}
-}
-
-// esWriter
-func esWriter(index string) zapcore.WriteSyncer {
-	client, err := elastic.NewClient(elastic.SetURL(env_manager.Load("elasticsearch_url")), elastic.SetSniff(false))
+// NewElasticLogger
+func NewElasticLogger(esURL, index string) (*ElasticLogger, error) {
+	client, err := elastic.NewClient(elastic.SetURL(esURL), elastic.SetSniff(false))
 	if err != nil {
-		fmt.Println("Failed to connect to Elasticsearch:", err)
-		return zapcore.AddSync(os.Stdout)
-	}
-	return zapcore.AddSync(&elasticWriter{client: client, index: index})
-}
-
-// elasticWriter write logs in Elasticsearch
-type elasticWriter struct {
-	client *elastic.Client
-	index  string
-}
-
-func (w *elasticWriter) Write(p []byte) (n int, err error) {
-	if w.client == nil {
-		return 0, fmt.Errorf("elasticsearch client is nil")
+		return nil, fmt.Errorf("error connecting to Elasticsearch: %v", err)
 	}
 
-	if json.Valid(p) {
-		var logEntry RequestLog
-		err = json.Unmarshal(p, &logEntry)
-		if err != nil {
-			fmt.Println("Failed to unmarshal log entry:", err)
-			return 0, err
-		}
+	logger := logrus.New()
+	logger.SetFormatter(&logrus.JSONFormatter{TimestampFormat: time.RFC3339})
+	logger.SetOutput(os.Stdout)
+	logger.SetLevel(logrus.DebugLevel)
 
-		err = writeLogToElastic(err, w, logEntry)
-
-	} else {
-
-		err = writeLogToElastic(err, w, string(p))
-	}
-
+	hook, err := elogrus.NewAsyncElasticHook(client, "localhost", logrus.DebugLevel, index)
 	if err != nil {
-		fmt.Println("Failed to log to Elasticsearch:", err)
-		return 0, err
+		return nil, fmt.Errorf("error setting up Elasticsearch hook: %v", err)
 	}
+	logger.AddHook(hook)
 
-	return len(p), nil
+	return &ElasticLogger{logger: logger}, nil
 }
 
-func writeLogToElastic(err error, w *elasticWriter, body interface{}) error {
-	_, err = w.client.Index().
-		Index(w.index).
-		BodyJson(body).
-		Do(context.Background())
-	return err
+func parseJSONString(jsonString string) (map[string]interface{}, error) {
+	var data map[string]interface{}
+	err := json.Unmarshal([]byte(jsonString), &data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
-func (w *elasticWriter) Sync() error {
-	return nil
+func (e *ElasticLogger) Info(msg string, jsonString string) {
+	data, err := parseJSONString(jsonString)
+	if err != nil {
+		e.logger.WithFields(logrus.Fields{"error": err.Error()}).Error("Failed to parse JSON input")
+		return
+	}
+	e.logger.WithFields(data).Info(msg)
 }
 
-func (l *Logger) Debug(msg string, args ...interface{}) {
-	l.sugar.Debugf(msg, args...)
+func (e *ElasticLogger) Error(msg string, jsonString string) {
+	data, err := parseJSONString(jsonString)
+	if err != nil {
+		e.logger.WithFields(logrus.Fields{"error": err.Error()}).Error("Failed to parse JSON input")
+		return
+	}
+	e.logger.WithFields(data).Error(msg)
 }
 
-func (l *Logger) Info(msg string, args ...interface{}) {
-	l.sugar.Infof(msg, args...)
-}
-
-func (l *Logger) Warn(msg string, args ...interface{}) {
-	l.sugar.Warnf(msg, args...)
-}
-
-func (l *Logger) Error(msg string, args ...interface{}) {
-	l.sugar.Errorf(msg, args...)
-}
-
-func (l *Logger) Fatal(msg string, args ...interface{}) {
-	l.sugar.Fatalf(msg, args...)
+func (e *ElasticLogger) Debug(msg string, jsonString string) {
+	data, err := parseJSONString(jsonString)
+	if err != nil {
+		e.logger.WithFields(logrus.Fields{"error": err.Error()}).Error("Failed to parse JSON input")
+		return
+	}
+	e.logger.WithFields(data).Debug(msg)
 }
