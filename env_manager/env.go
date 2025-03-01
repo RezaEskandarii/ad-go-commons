@@ -5,14 +5,10 @@ import (
 	"os"
 )
 
-func Load(key string) string {
+func Get(key string) string {
 	err := godotenv.Load()
 	if err != nil {
-		return ""
+		return strings.TrimSpace(os.Getenv(key))
 	}
-	return os.Getenv(key)
-}
-
-func GetFromOsENV(key string) string {
-	return os.Getenv(key)
+	return strings.TrimSpace(os.Getenv(key))
 }
