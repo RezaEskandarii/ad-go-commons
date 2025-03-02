@@ -3,6 +3,7 @@ package env_manager
 import (
 	"github.com/joho/godotenv"
 	"os"
+	"strings"
 )
 
 func Get(key string) string {

@@ -1,28 +1,25 @@
 package logger
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
 
 	"github.com/olivere/elastic/v7"
 	"github.com/sirupsen/logrus"
-	elogrus "gopkg.in/sohlich/elogrus.v7"
+	"gopkg.in/sohlich/elogrus.v7"
 )
 
 type AppLogger interface {
-	Info(msg string, jsonString string)
-	Error(msg string, jsonString string)
-	Debug(msg string, jsonString string)
+	Info(msg string, log *RequestLog)
+	Error(msg string, log *RequestLog)
+	Debug(msg string, log *RequestLog)
 }
 
-// ElasticLogger
 type ElasticLogger struct {
 	logger *logrus.Logger
 }
 
-// NewElasticLogger
 func NewElasticLogger(esURL, index string) (*ElasticLogger, error) {
 	client, err := elastic.NewClient(elastic.SetURL(esURL), elastic.SetSniff(false))
 	if err != nil {
@@ -34,7 +31,7 @@ func NewElasticLogger(esURL, index string) (*ElasticLogger, error) {
 	logger.SetOutput(os.Stdout)
 	logger.SetLevel(logrus.DebugLevel)
 
-	hook, err := elogrus.NewAsyncElasticHook(client, "localhost", logrus.DebugLevel, index)
+	hook, err := elogrus.NewAsyncElasticHook(client, esURL, logrus.DebugLevel, index)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up Elasticsearch hook: %v", err)
 	}
@@ -43,38 +40,39 @@ func NewElasticLogger(esURL, index string) (*ElasticLogger, error) {
 	return &ElasticLogger{logger: logger}, nil
 }
 
-func parseJSONString(jsonString string) (map[string]interface{}, error) {
-	var data map[string]interface{}
-	err := json.Unmarshal([]byte(jsonString), &data)
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
-}
-
-func (e *ElasticLogger) Info(msg string, jsonString string) {
-	data, err := parseJSONString(jsonString)
-	if err != nil {
-		e.logger.WithFields(logrus.Fields{"error": err.Error()}).Error("Failed to parse JSON input")
-		return
-	}
+func (e *ElasticLogger) Info(msg string, log *RequestLog) {
+	data := requestLogToMap(log)
 	e.logger.WithFields(data).Info(msg)
 }
 
-func (e *ElasticLogger) Error(msg string, jsonString string) {
-	data, err := parseJSONString(jsonString)
-	if err != nil {
-		e.logger.WithFields(logrus.Fields{"error": err.Error()}).Error("Failed to parse JSON input")
-		return
-	}
+func (e *ElasticLogger) Error(msg string, log *RequestLog) {
+	data := requestLogToMap(log)
 	e.logger.WithFields(data).Error(msg)
 }
 
-func (e *ElasticLogger) Debug(msg string, jsonString string) {
-	data, err := parseJSONString(jsonString)
-	if err != nil {
-		e.logger.WithFields(logrus.Fields{"error": err.Error()}).Error("Failed to parse JSON input")
-		return
-	}
+func (e *ElasticLogger) Debug(msg string, log *RequestLog) {
+	data := requestLogToMap(log)
 	e.logger.WithFields(data).Debug(msg)
+}
+
+func requestLogToMap(log *RequestLog) map[string]interface{} {
+	if log == nil {
+		log = &RequestLog{}
+	}
+
+	result := make(map[string]interface{})
+	// Directly populate the map with field values
+	result["trace_id"] = log.TraceID
+	result["method"] = log.Method
+	result["path"] = log.Path
+	result["query_string"] = log.QueryString
+	result["user_agent"] = log.UserAgent
+	result["ip_address"] = log.IpAddress
+	result["response_status_code"] = log.ResponseStatusCode
+	result["response_time_ms"] = log.ResponseTimeMs
+	result["user_id"] = log.UserId
+	result["error"] = log.Error
+	result["time"] = log.Time
+
+	return result
 }
